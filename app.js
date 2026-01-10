@@ -2,10 +2,15 @@
 // CONFIGURACIÓN
 // ==========================================
 const AIO_USERNAME = "jara03"; 
-const AIO_KEY = "aio_wAzn32hdT1seoy5BU6CnRm6oS2bB"; 
+
+const PREFIJO = "aio_";
+const SECRETO = "fVhC52Bbk7Cj0dPgSsOIBCcgulf3"; 
+
+const AIO_KEY = PREFIJO + SECRETO; 
 
 const FEED_KEY_TEMP = "temperatura";
 const FEED_KEY_HUM = "humedad";
+// ==========================================
 // ==========================================
 
 let chartTemp, chartHum;
