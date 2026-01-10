@@ -1,142 +1,160 @@
 // ==========================================
-// CONFIGURACIÓN (¡PON TUS DATOS AQUÍ!)
+// CONFIGURACIÓN
 // ==========================================
 const AIO_USERNAME = "jara03"; 
-const AIO_KEY = "aio_vlIF47ZwKYfQfF18ZhAlTcPpXQUd";           
+const AIO_KEY = "aio_rWoZ89EwA1ciwaAlCez9xvrsilz4"; // <--- ¡PEGA TU LLAVE AQUI!
 
-const FEED_TEMP = AIO_USERNAME + "/feeds/temperatura";
-const FEED_HUM = AIO_USERNAME + "/feeds/humedad";
+const FEED_KEY_TEMP = "temperatura";
+const FEED_KEY_HUM = "humedad";
 // ==========================================
 
-// Variables para las dos gráficas
-let chartTemp;
-let chartHum;
+let chartTemp, chartHum;
+let client;
 
-// Inicializar
 window.onload = function() {
+    // 1. Poner la fecha de hoy en el input
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('historyDate').value = today;
+
+    // 2. Iniciar gráficas vacías
     initCharts();
+
+    // 3. Conectar MQTT para datos en vivo
     connectMQTT();
+
+    // 4. Cargar historial del día actual
+    loadHistory();
 };
 
-// 1. Configuración de las DOS Gráficas
+// --- A. GESTIÓN DE GRÁFICAS ---
 function initCharts() {
-    // --- Configuración Gráfica Temperatura (Roja) ---
-    const ctxTemp = document.getElementById('tempChart').getContext('2d');
-    chartTemp = new Chart(ctxTemp, {
-        type: 'line',
-        data: {
-            labels: [], // Se llenará con las horas
-            datasets: [{
-                label: 'Temperatura (°C)',
-                data: [],
-                borderColor: '#ff6b6b', // Rojo
-                backgroundColor: 'rgba(255, 107, 107, 0.1)',
-                borderWidth: 2,
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: { ticks: { color: '#a0a0a0' }, grid: { color: '#333' } },
-                y: { ticks: { color: '#ff6b6b' }, grid: { color: '#333' } }
+    const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { 
+                grid: { color: 'rgba(0,0,0,0.05)' },
+                ticks: { color: '#666', maxTicksLimit: 12 } // Mostrar horas
             },
-            plugins: { legend: { display: false } } // Ocultamos leyenda para limpiar
+            y: { 
+                grid: { color: 'rgba(0,0,0,0.05)' },
+                ticks: { color: '#666' } 
+            }
+        },
+        elements: {
+            point: { radius: 0, hitRadius: 10 } // Puntos invisibles para que se vea limpio
         }
+    };
+
+    // Temperatura (Estilo cálido)
+    chartTemp = new Chart(document.getElementById('tempChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ 
+            data: [], 
+            borderColor: '#e55039', 
+            backgroundColor: 'rgba(229, 80, 57, 0.2)', 
+            fill: true, tension: 0.4 
+        }]},
+        options: commonOptions
     });
 
-    // --- Configuración Gráfica Humedad (Azul/Verde) ---
-    const ctxHum = document.getElementById('humChart').getContext('2d');
-    chartHum = new Chart(ctxHum, {
+    // Humedad (Estilo fresco/agua)
+    chartHum = new Chart(document.getElementById('humChart'), {
         type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Humedad (%)',
-                data: [],
-                borderColor: '#4ecdc4', // Turquesa
-                backgroundColor: 'rgba(78, 205, 196, 0.1)',
-                borderWidth: 2,
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: { ticks: { color: '#a0a0a0' }, grid: { color: '#333' } },
-                y: { ticks: { color: '#4ecdc4' }, grid: { color: '#333' } }
-            },
-            plugins: { legend: { display: false } }
-        }
+        data: { labels: [], datasets: [{ 
+            data: [], 
+            borderColor: '#3c6382', 
+            backgroundColor: 'rgba(60, 99, 130, 0.2)', 
+            fill: true, tension: 0.4 
+        }]},
+        options: commonOptions
     });
 }
 
-// 2. Conexión MQTT (Igual que antes)
-function connectMQTT() {
-    console.log("Conectando a Adafruit IO...");
-    let clientID = "clientID-" + parseInt(Math.random() * 100);
-    client = new Paho.MQTT.Client("io.adafruit.com", 443, clientID);
+// --- B. CARGAR HISTORIAL (API REST) ---
+async function loadHistory() {
+    const dateInput = document.getElementById('historyDate').value;
+    if(!dateInput) return alert("Selecciona una fecha");
 
-    client.onConnectionLost = onConnectionLost;
-    client.onMessageArrived = onMessageArrived;
+    // Definir inicio y fin del día seleccionado en UTC
+    const startTime = new Date(dateInput + "T00:00:00").toISOString();
+    const endTime = new Date(dateInput + "T23:59:59").toISOString();
 
-    let options = {
-        useSSL: true,
-        userName: AIO_USERNAME,
-        password: AIO_KEY,
-        onSuccess: onConnect,
-        onFailure: doFail
-    }
-    client.connect(options);
+    console.log(`Cargando datos del ${dateInput}...`);
+
+    // Pedir datos a Adafruit IO API
+    await fetchAndPlot(FEED_KEY_TEMP, chartTemp, startTime, endTime);
+    await fetchAndPlot(FEED_KEY_HUM, chartHum, startTime, endTime);
 }
 
-function onConnect() {
-    console.log("¡Conectado!");
-    client.subscribe(FEED_TEMP);
-    client.subscribe(FEED_HUM);
-}
-
-function doFail(e){ console.log("Fallo conexión", e); }
-function onConnectionLost(responseObject) {
-    if (responseObject.errorCode !== 0) console.log("Conexión perdida: " + responseObject.errorMessage);
-}
-
-// 3. Recibir datos y actualizar la gráfica correcta
-function onMessageArrived(message) {
-    let topic = message.destinationName;
-    let payload = message.payloadString;
+async function fetchAndPlot(feedKey, chartInstance, start, end) {
+    const url = `https://io.adafruit.com/api/v2/${AIO_USERNAME}/feeds/${feedKey}/data?start_time=${start}&end_time=${end}`;
     
-    // Crear la etiqueta de hora
-    let now = new Date();
-    let timeLabel = now.getHours() + ":" + now.getMinutes().toString().padStart(2, '0') + ":" + now.getSeconds().toString().padStart(2, '0');
+    try {
+        const response = await fetch(url, {
+            headers: { "X-AIO-Key": AIO_KEY }
+        });
+        const data = await response.json();
 
-    if (topic === FEED_TEMP) {
-        document.getElementById("temp-value").innerText = payload;
-        // Actualizamos SOLO la gráfica de temperatura
-        updateSpecificChart(chartTemp, timeLabel, payload);
-    }
-    else if (topic === FEED_HUM) {
-        document.getElementById("hum-value").innerText = payload;
-        // Actualizamos SOLO la gráfica de humedad
-        updateSpecificChart(chartHum, timeLabel, payload);
+        // Procesar datos (Adafruit los devuelve del más nuevo al más viejo, hay que invertir)
+        const labels = [];
+        const values = [];
+
+        data.reverse().forEach(point => {
+            // Formatear hora: "14:30"
+            const date = new Date(point.created_at);
+            const timeStr = date.getHours().toString().padStart(2,'0') + ":" + date.getMinutes().toString().padStart(2,'0');
+            
+            labels.push(timeStr);
+            values.push(parseFloat(point.value));
+        });
+
+        // Actualizar gráfica
+        chartInstance.data.labels = labels;
+        chartInstance.data.datasets[0].data = values;
+        chartInstance.update();
+
+    } catch (error) {
+        console.error("Error cargando historial:", error);
     }
 }
 
-// Función auxiliar simplificada para actualizar cualquier gráfica
-function updateSpecificChart(chartInstance, label, dataPoint) {
-    // Agregar datos
-    chartInstance.data.labels.push(label);
-    chartInstance.data.datasets[0].data.push(dataPoint);
+// --- C. MQTT (TIEMPO REAL) ---
+function connectMQTT() {
+    const clientID = "clientID-" + parseInt(Math.random() * 100);
+    client = new Paho.MQTT.Client("io.adafruit.com", 443, clientID);
+    client.onMessageArrived = onMessageArrived;
+    client.connect({
+        useSSL: true, userName: AIO_USERNAME, password: AIO_KEY,
+        onSuccess: () => {
+            console.log("MQTT Conectado");
+            client.subscribe(`${AIO_USERNAME}/feeds/${FEED_KEY_TEMP}`);
+            client.subscribe(`${AIO_USERNAME}/feeds/${FEED_KEY_HUM}`);
+        }
+    });
+}
 
-    // Mantener solo los últimos 20 puntos para que no se sature
-    if (chartInstance.data.labels.length > 20) {
-        chartInstance.data.labels.shift();
-        chartInstance.data.datasets[0].data.shift();
+function onMessageArrived(message) {
+    const topic = message.destinationName;
+    const payload = message.payloadString;
+
+    if (topic.includes("temperatura")) {
+        document.getElementById("temp-value").innerText = payload;
+        // Opcional: Agregar el punto a la gráfica actual en tiempo real
+        addRealTimeData(chartTemp, payload);
+    } 
+    else if (topic.includes("humedad")) {
+        document.getElementById("hum-value").innerText = payload;
+        addRealTimeData(chartHum, payload);
     }
+}
 
-    chartInstance.update();
+function addRealTimeData(chart, val) {
+    const now = new Date();
+    const timeLabel = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+    
+    chart.data.labels.push(timeLabel);
+    chart.data.datasets[0].data.push(val);
+    chart.update();
 }
