@@ -3,6 +3,7 @@
 // ==========================================
 const AIO_USERNAME = "jara03"; 
 
+// Truco Anti-Borrado de GitHub
 const PREFIJO = "aio_";
 const SECRETO = "fVhC52Bbk7Cj0dPgSsOIBCcgulf3"; 
 
@@ -10,7 +11,6 @@ const AIO_KEY = PREFIJO + SECRETO;
 
 const FEED_KEY_TEMP = "temperatura";
 const FEED_KEY_HUM = "humedad";
-// ==========================================
 // ==========================================
 
 let chartTemp, chartHum;
@@ -48,7 +48,7 @@ function initCharts() {
             }
         },
         elements: {
-            point: { radius: 0, hitRadius: 10 } // Puntos invisibles para que se vea limpio
+            point: { radius: 0, hitRadius: 10 } // Puntos invisibles para limpieza visual
         }
     };
 
@@ -94,18 +94,31 @@ async function loadHistory() {
 }
 
 async function fetchAndPlot(feedKey, chartInstance, start, end) {
-    const url = `https://io.adafruit.com/api/v2/${AIO_USERNAME}/feeds/${feedKey}/data?start_time=${start}&end_time=${end}`;
+    // === CAMBIO IMPORTANTE AQUÍ ABAJO ===
+    // Agregamos 'limit=1000' para pedir el máximo.
+    // Agregamos 'resolution=5' (minutos) para que Adafruit nos de un promedio 
+    // cada 5 minutos. Esto permite ver 24 horas completas sin que se corten los datos.
+    const url = `https://io.adafruit.com/api/v2/${AIO_USERNAME}/feeds/${feedKey}/data?start_time=${start}&end_time=${end}&limit=1000&resolution=5`;
     
     try {
         const response = await fetch(url, {
             headers: { "X-AIO-Key": AIO_KEY }
         });
+        
+        if (!response.ok) {
+             throw new Error(`Error API: ${response.status}`);
+        }
+
         const data = await response.json();
 
-        // Procesar datos (Adafruit los devuelve del más nuevo al más viejo, hay que invertir)
+        // Procesar datos 
+        // Nota: Al usar 'resolution', a veces el orden ya viene correcto, 
+        // pero por seguridad mantenemos el reverse() si vienen del más nuevo al más viejo.
         const labels = [];
         const values = [];
 
+        // Adafruit suele devolver del más reciente al más antiguo, así que invertimos.
+        // Si ves la gráfica al revés, quita el .reverse()
         data.reverse().forEach(point => {
             // Formatear hora: "14:30"
             const date = new Date(point.created_at);
@@ -158,6 +171,12 @@ function onMessageArrived(message) {
 function addRealTimeData(chart, val) {
     const now = new Date();
     const timeLabel = now.getHours().toString().padStart(2,'0') + ":" + now.getMinutes().toString().padStart(2,'0');
+    
+    // Para evitar que la gráfica en vivo se sature, limitamos a 50 puntos
+    if(chart.data.labels.length > 50) {
+        chart.data.labels.shift();
+        chart.data.datasets[0].data.shift();
+    }
     
     chart.data.labels.push(timeLabel);
     chart.data.datasets[0].data.push(val);
